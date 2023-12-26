@@ -1,0 +1,66 @@
+stages:
+    - versioning
+    - sonarqube
+    - container_build
+    - push
+    - clean_up
+    - deploy
+
+
+versioning and prepare:
+    stage: versioning
+    script:
+        - echo "Version is $CI_COMMIT_BRANCH.$CI_PIPELINE_ID"
+    tags:
+        - linux
+
+
+# sonarqube-check:
+#   stage: sonarqube
+#   variables:
+#     SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+#     GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+#     SONAR_SCANNER_OPTS: -Djavax.net.ssl.trustStore=/root/sonarqube.jks -Djavax.net.ssl.trustStorePassword=somepass -Dsonar.qualitygate.wait=true
+#   cache:
+#     key: "${CI_JOB_NAME}"
+#     paths:
+#       - .sonar/cache
+#   script: 
+#     - sonar-scanner
+#   allow_failure: true
+#   tags:
+#       - linux
+
+
+dev_build:
+    stage: container_build
+    script:
+        - docker build -t 899260217834.dkr.ecr.us-east-1.amazonaws.com/entangle-landing:$CI_COMMIT_BRANCH.$CI_PIPELINE_ID .
+    tags:
+        - linux
+
+
+push_to_aws:
+    stage: push
+    script:
+        - docker push 899260217834.dkr.ecr.us-east-1.amazonaws.com/entangle-landing:$CI_COMMIT_BRANCH.$CI_PIPELINE_ID
+    tags:
+        - linux
+
+
+clean_up_image:
+    stage: clean_up
+    script:
+        - docker rmi 899260217834.dkr.ecr.us-east-1.amazonaws.com/entangle-landing:$CI_COMMIT_BRANCH.$CI_PIPELINE_ID -f
+    tags:
+        - linux
+
+
+deploy_dev:
+    stage: deploy
+    script:
+        - git clone https://oauth2:$OAUTH_KEY@gitlab.ent-dx.com/devops/ci-scripts.git
+        - python3 ci-scripts/awx_call.py https://awx.ent-dx.com/api/v2/job_templates/36/launch/ $AWX_TOKEN landing_target:$CI_COMMIT_BRANCH.$CI_PIPELINE_ID
+    tags:
+        - linux
+    when: manual
